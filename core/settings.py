@@ -44,7 +44,7 @@ INSTALLED_APPS = [
 
     # Custom apps
     'accounts',
-    'streaming',
+    'streaming.apps.StreamingConfig',  # use the full path to your AppConfig here
 ]
 
 AUTH_USER_MODEL = 'accounts.User'
