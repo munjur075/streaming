@@ -1,0 +1,59 @@
+# views.py/
+------------------------------------------------
+import os
+import subprocess
+from django.conf import settings
+from django.shortcuts import render
+from django.core.files.storage import FileSystemStorage
+from django.http import JsonResponse
+from .models import Video
+
+def upload_video(request):
+    if request.method == 'POST' and request.FILES.get('video'):
+        title = request.POST.get('title', 'Untitled')
+        video_file = request.FILES['video']
+
+        fs = FileSystemStorage()
+        filename = fs.save(f'videos/originals/{video_file.name}', video_file)
+        file_path = os.path.join(settings.MEDIA_ROOT, filename)
+
+        video = Video.objects.create(title=title, video_file=filename)
+        convert_to_hls(file_path, video.id)
+
+        return JsonResponse({'message': 'Video uploaded and converted!', 'video_id': video.id})
+
+    return render(request, 'upload.html')
+
+def convert_to_hls(input_path, video_id):
+    output_dir = os.path.join(settings.MEDIA_ROOT, f'videos/hls/{video_id}')
+    os.makedirs(output_dir, exist_ok=True)
+    command = [
+        'ffmpeg', '-i', input_path,
+        '-codec: copy', '-start_number', '0',
+        '-hls_time', '10', '-hls_list_size', '0',
+        '-f', 'hls',
+        os.path.join(output_dir, 'index.m3u8')
+    ]
+    subprocess.run(' '.join(command), shell=True)
+
+
+from django.shortcuts import get_object_or_404
+
+def play_video(request, video_id):
+    video = get_object_or_404(Video, pk=video_id)
+    hls_path = f"/media/videos/hls/{video.id}/index.m3u8"
+    return render(request, 'play_video.html', {'video': video, 'hls_path': hls_path})
+
+
+#--------------------------------- urls.py
+from django.urls import path
+from .views import upload_video, play_video
+
+urlpatterns = [
+    path('upload/', upload_video, name='upload_video'),
+    path('play/<int:video_id>/', play_video, name='play_video'),
+]
+
+
+
+#--------------------------------- urls.py

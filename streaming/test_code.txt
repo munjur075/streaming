@@ -1,0 +1,132 @@
+# views.py
+---------------------
+import os
+import subprocess
+from django.shortcuts import render, redirect, get_object_or_404
+from .models import Video
+from .forms import VideoForm
+from django.conf import settings
+
+def upload_video(request):
+    if request.method == 'POST':
+        form = VideoForm(request.POST, request.FILES)
+        if form.is_valid():
+            video = form.save()
+            input_path = video.video_file.path
+            output_dir = os.path.join(settings.MEDIA_ROOT, f'hls/{video.id}')
+            os.makedirs(output_dir, exist_ok=True)
+
+            output_path = os.path.join(output_dir, 'index.m3u8')
+            cmd = [
+                # C:\Users\munju\Desktop\ffmpeg\bin
+                r'C:\Users\munju\Desktop\ffmpeg\bin',  # <-- use your full ffmpeg.exe path here
+                '-i', input_path,
+                '-codec:', 'copy',
+                '-start_number', '0',
+                '-hls_time', '10',
+                '-hls_list_size', '0',
+                '-f', 'hls', output_path
+            ]
+            try:
+                subprocess.run(cmd, check=True)
+            except FileNotFoundError:
+                return render(request, 'streaming/upload.html', {
+                    'form': form,
+                    'error': 'FFmpeg not found. Please install it and set PATH or use full path to ffmpeg.exe.'
+                })
+            except subprocess.CalledProcessError as e:
+                return render(request, 'streaming/upload.html', {
+                    'form': form,
+                    'error': f'FFmpeg error: {e}'
+                })
+
+            video.hls_path = f'hls/{video.id}/index.m3u8'
+            video.save()
+            return redirect('stream_video', video_id=video.id)
+    else:
+        form = VideoForm()
+    return render(request, 'streaming/upload.html', {'form': form})
+
+
+def stream_video(request, video_id):
+    video = get_object_or_404(Video, id=video_id)
+    return render(request, 'streaming/stream.html', {'video': video})
+
+
+
+models.py
+-------------------
+from django.db import models
+
+class Video(models.Model):
+    title = models.CharField(max_length=255)
+    video_file = models.FileField(upload_to='videos/')
+    hls_path = models.CharField(max_length=255, blank=True)
+
+    def __str__(self):
+        return self.title
+
+
+forms.py
+--------------------------
+from django import forms
+from .models import Video
+
+class VideoForm(forms.ModelForm):
+    class Meta:
+        model = Video
+        fields = ['title', 'video_file']
+
+
+urls.py
+-------------------------
+from django.urls import path
+from .views import upload_video, stream_video
+
+urlpatterns = [
+    path('', upload_video, name='upload_video'),
+    path('stream/<int:video_id>/', stream_video, name='stream_video'),
+]
+
+
+
+stream.html
+----------------------
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Stream Video</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+</head>
+<body>
+    <h2>{{ video.title }}</h2>
+    <video id="video" width="640" height="360" controls></video>
+    <script>
+        var video = document.getElementById('video');
+        var videoSrc = "/media/{{ video.hls_path }}";
+        if (Hls.isSupported()) {
+            var hls = new Hls();
+            hls.loadSource(videoSrc);
+            hls.attachMedia(video);
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            video.src = videoSrc;
+        }
+    </script>
+</body>
+</html>
+
+
+upload.html
+---------------------
+<!DOCTYPE html>
+<html>
+<head><title>Upload Video</title></head>
+<body>
+    <h2>Upload a Video</h2>
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit">Upload</button>
+    </form>
+</body>
+</html>
