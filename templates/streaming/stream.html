@@ -1,22 +1,78 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
     <title>Stream Video</title>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <style>
+        video {
+            width: 100%;
+            max-width: 800px;
+            margin: 20px auto;
+            display: block;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+        }
+        .controls {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        select {
+            padding: 6px 12px;
+            font-size: 16px;
+        }
+    </style>
 </head>
 <body>
-    <h2>{{ video.title }}</h2>
-    <video id="video" width="640" height="360" controls></video>
+
+    <div class="controls">
+        <label for="quality">Select Quality: </label>
+        <select id="quality">
+            <option value="1080p.m3u8">1080p</option>
+            <option value="720p.m3u8" selected>720p</option>
+            <option value="480p.m3u8">480p</option>
+        </select>
+    </div>
+
+    <video id="video" controls></video>
+
     <script>
-        var video = document.getElementById('video');
-        var videoSrc = "/media/{{ video.hls_path }}";
-        if (Hls.isSupported()) {
-            var hls = new Hls();
-            hls.loadSource(videoSrc);
-            hls.attachMedia(video);
-        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-            video.src = videoSrc;
+        const video = document.getElementById('video');
+        const qualitySelector = document.getElementById('quality');
+
+        const baseStreamUrl = "{{ video.hls_path|slice:':-10' }}";  // remove index.m3u8
+        let hls;
+
+        function loadStream(quality) {
+            const url = `/media/${baseStreamUrl}${quality}`;
+            
+            if (hls) {
+                hls.destroy();
+            }
+
+            if (Hls.isSupported()) {
+                hls = new Hls();
+                hls.loadSource(url);
+                hls.attachMedia(video);
+                hls.on(Hls.Events.MANIFEST_PARSED, function () {
+                    video.play();
+                });
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                video.src = url;
+                video.addEventListener('loadedmetadata', function () {
+                    video.play();
+                });
+            }
         }
+
+        // Load default
+        loadStream(qualitySelector.value);
+
+        // Change quality on selection
+        qualitySelector.addEventListener('change', function () {
+            loadStream(this.value);
+        });
     </script>
+
 </body>
 </html>
